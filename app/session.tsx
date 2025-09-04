@@ -11,25 +11,34 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import {
-  X,
-  Pause,
-  Play,
-  Volume2,
-  Timer,
-  Wind,
-  Settings,
-  Clock,
-  Waves,
-  Zap,
-  Brain,
-  ChevronDown,
-  ChevronUp,
-  Sliders,
-  Save,
-  Download,
-  Upload,
-} from "lucide-react-native";
+import { 
+  Feather, 
+  MaterialCommunityIcons, 
+  FontAwesome5, 
+  Ionicons, 
+  Entypo, 
+  FontAwesome, 
+  AntDesign 
+} from "@expo/vector-icons";
+
+// Icon mapping for usage in JSX
+const X = (props: any) => <Feather name="x" {...props} />;
+const Pause = (props: any) => <Feather name="pause" {...props} />;
+const Play = (props: any) => <Feather name="play" {...props} />;
+const Volume2 = (props: any) => <Feather name="volume-2" {...props} />;
+const Timer = (props: any) => <Feather name="clock" {...props} />;
+const Wind = (props: any) => <Feather name="wind" {...props} />;
+const Settings = (props: any) => <Feather name="settings" {...props} />;
+const Clock = (props: any) => <Feather name="clock" {...props} />;
+const Waves = (props: any) => <MaterialCommunityIcons name="wave" {...props} />;
+const Zap = (props: any) => <Feather name="zap" {...props} />;
+const Brain = (props: any) => <FontAwesome5 name="brain" {...props} />;
+const ChevronDown = (props: any) => <Feather name="chevron-down" {...props} />;
+const ChevronUp = (props: any) => <Feather name="chevron-up" {...props} />;
+const Sliders = (props: any) => <Feather name="sliders" {...props} />;
+const Save = (props: any) => <Feather name="save" {...props} />;
+const Download = (props: any) => <Feather name="download" {...props} />;
+const Upload = (props: any) => <Feather name="upload" {...props} />;
 import { router } from "expo-router";
 import { useSound } from "@/providers/SoundProvider";
 import { SOUNDSCAPES } from "@/constants/soundscapes";

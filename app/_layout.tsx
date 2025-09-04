@@ -3,7 +3,7 @@ import { Tabs } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { Home, Play, Settings } from "lucide-react-native";
+import { MaterialIcons } from "@expo/vector-icons";
 import { SoundProvider } from "@/providers/SoundProvider";
 import { COLORS } from "@/constants/colors";
 
@@ -41,7 +41,7 @@ function RootLayoutNav() {
         options={{
           title: "Home",
           tabBarIcon: ({ color, size }) => (
-            <Home color={color} size={size} />
+            <MaterialIcons name="home" color={color} size={size} />
           ),
         }}
       />
@@ -50,7 +50,7 @@ function RootLayoutNav() {
         options={{
           title: "Session",
           tabBarIcon: ({ color, size }) => (
-            <Play color={color} size={size} />
+            <MaterialIcons name="play-arrow" color={color} size={size} />
           ),
         }}
       />
@@ -59,7 +59,7 @@ function RootLayoutNav() {
         options={{
           title: "Settings",
           tabBarIcon: ({ color, size }) => (
-            <Settings color={color} size={size} />
+            <MaterialIcons name="settings" color={color} size={size} />
           ),
         }}
       />

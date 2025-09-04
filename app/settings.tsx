@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
-import { ArrowLeft, Bell, Moon, Smartphone, Info } from "lucide-react-native";
+import { AntDesign, Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useSound } from "@/providers/SoundProvider";
 import { COLORS } from "@/constants/colors";
@@ -35,7 +35,7 @@ export default function SettingsScreen() {
             onPress={() => router.back()}
             style={styles.backButton}
           >
-            <ArrowLeft color={COLORS.text.primary} size={24} />
+            <AntDesign name="arrowleft" color={COLORS.text.primary} size={24} />
           </TouchableOpacity>
           <Text style={styles.title}>Settings</Text>
           <View style={{ width: 40 }} />
@@ -50,7 +50,7 @@ export default function SettingsScreen() {
             
             <View style={styles.settingRow}>
               <View style={styles.settingLeft}>
-                <Bell color={COLORS.text.secondary} size={20} />
+                <Feather name="bell" color={COLORS.text.secondary} size={20} />
                 <Text style={styles.settingLabel}>Notifications</Text>
               </View>
               <Switch
@@ -66,7 +66,7 @@ export default function SettingsScreen() {
 
             <View style={styles.settingRow}>
               <View style={styles.settingLeft}>
-                <Moon color={COLORS.text.secondary} size={20} />
+                <Feather name="moon" color={COLORS.text.secondary} size={20} />
                 <Text style={styles.settingLabel}>Dark Mode</Text>
               </View>
               <Switch
@@ -82,7 +82,7 @@ export default function SettingsScreen() {
 
             <View style={styles.settingRow}>
               <View style={styles.settingLeft}>
-                <Smartphone color={COLORS.text.secondary} size={20} />
+                <Feather name="smartphone" color={COLORS.text.secondary} size={20} />
                 <Text style={styles.settingLabel}>Keep Screen On</Text>
               </View>
               <Switch
@@ -101,7 +101,7 @@ export default function SettingsScreen() {
             <Text style={styles.sectionTitle}>About</Text>
             
             <TouchableOpacity style={styles.aboutRow}>
-              <Info color={COLORS.text.secondary} size={20} />
+              <Feather name="info" color={COLORS.text.secondary} size={20} />
               <View style={styles.aboutContent}>
                 <Text style={styles.aboutTitle}>Mindscape</Text>
                 <Text style={styles.aboutText}>

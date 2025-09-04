@@ -98,17 +98,30 @@ const ModeTab = React.memo(function ModeTab({ mode, onPress, isActive }: ModeTab
         ]}
       >
         <LinearGradient
-          colors={isActive ? mode.gradient : ['rgba(255,255,255,0.1)', 'rgba(255,255,255,0.05)']}
+          colors={
+            isActive && "gradient" in mode
+              ? mode.gradient
+              : ['rgba(255,255,255,0.1)', 'rgba(255,255,255,0.05)']
+          }
           style={styles.tabGradient}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
         >
           <View style={styles.tabContent}>
             <View style={[styles.tabIconContainer, isActive && styles.activeTabIconContainer]}>
-              {React.cloneElement(mode.icon, { 
-                color: isActive ? '#fff' : COLORS.text.secondary,
-                size: 20
-              })}
+            {React.isValidElement(mode.icon)
+                ? React.cloneElement(mode.icon as React.ReactElement<any>, {
+                        ...(mode.icon.props || {}),
+                        // Use 'color' prop if supported, otherwise fallback to 'sx'
+                        color: isActive ? '#fff' : COLORS.text.secondary,
+                        sx: [
+                            typeof mode.icon.props === 'object' && mode.icon.props !== null && 'style' in mode.icon.props
+                              ? (mode.icon.props.style as any)
+                              : {},
+                            { fontSize: 20 }
+                        ]
+                    })
+                : mode.icon}
             </View>
             <Text style={[styles.tabTitle, isActive && styles.activeTabTitle]}>
               {mode.name}
@@ -270,7 +283,11 @@ export default function HomeScreen() {
             {currentItem ? (
               <View style={styles.selectedModeContent}>
                 <LinearGradient
-                  colors={currentItem.gradient}
+                  colors={
+                    "gradient" in currentItem
+                      ? currentItem.gradient
+                      : ['rgba(255,255,255,0.1)', 'rgba(255,255,255,0.05)']
+                  }
                   style={styles.selectedModeCard}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
@@ -284,7 +301,7 @@ export default function HomeScreen() {
                         {currentItem.name}
                       </Text>
                       <Text style={styles.selectedModeDescription}>
-                        {currentItem.description}
+                        {"description" in currentItem ? currentItem.description : ""}
                       </Text>
                       {activeContent === 'storylines' && 'duration' in currentItem && (
                         <Text style={styles.durationText}>
