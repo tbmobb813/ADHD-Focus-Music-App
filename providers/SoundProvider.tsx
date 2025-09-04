@@ -1,42 +1,17 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Audio } from "expo-av";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import createContextHook from "@nkzw/create-context-hook";
 import { SOUNDSCAPES } from "@/constants/soundscapes";
 import { Platform } from "react-native";
-
-type NoiseType = 'white' | 'pink' | 'brown';
-type TimeOfDay = 'morning' | 'afternoon' | 'evening' | 'night';
-
-interface SoundLayer {
-  id: string;
-  type: 'noise' | 'pad' | 'pulse' | 'binaural';
-  volume: number;
-  frequency?: number;
-  enabled: boolean;
-  filterFreq?: number;
-  resonance?: number;
-  lfoRate?: number;
-  lfoDepth?: number;
-}
-
-interface Preset {
-  id: string;
-  name: string;
-  mode: keyof typeof SOUNDSCAPES;
-  layers: SoundLayer[];
-  volume: number;
-  noiseType: NoiseType;
-  binauralFreq: number;
-  createdAt: number;
-}
-
-interface AdaptiveSettings {
-  timeOfDay: TimeOfDay;
-  sessionLength: number;
-  adaptToTime: boolean;
-  layers: SoundLayer[];
-}
+import { useGenerativeAudio } from "@/hooks/useGenerativeAudio";
+import { 
+  NoiseType, 
+  TimeOfDay, 
+  SoundLayer, 
+  Preset, 
+  AdaptiveSettings 
+} from "@/types/audio";
 
 // Get current time of day
 function getTimeOfDay(): TimeOfDay {
@@ -78,219 +53,15 @@ export const [SoundProvider, useSound] = createContextHook(() => {
   
   const soundRef = useRef<Audio.Sound | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const audioContext = useRef<AudioContext | null>(null);
-  const oscillators = useRef<Map<string, OscillatorNode>>(new Map());
-  const gainNodes = useRef<Map<string, GainNode>>(new Map());
-  const filterNodes = useRef<Map<string, BiquadFilterNode>>(new Map());
-  const lfoNodes = useRef<Map<string, OscillatorNode>>(new Map());
-  const reverbNode = useRef<ConvolverNode | null>(null);
-  const noiseBuffer = useRef<AudioBuffer | null>(null);
-  const reverbBuffer = useRef<AudioBuffer | null>(null);
   
-  // Generate reverb impulse response
-  const generateReverbBuffer = useCallback((duration: number = 2, decay: number = 2) => {
-    if (Platform.OS !== 'web' || !audioContext.current) {
-      return null;
-    }
-    
-    const sampleRate = audioContext.current.sampleRate;
-    const length = sampleRate * duration;
-    const buffer = audioContext.current.createBuffer(2, length, sampleRate);
-    
-    for (let channel = 0; channel < 2; channel++) {
-      const channelData = buffer.getChannelData(channel);
-      for (let i = 0; i < length; i++) {
-        const n = length - i;
-        channelData[i] = (Math.random() * 2 - 1) * Math.pow(n / length, decay);
-      }
-    }
-    
-    return buffer;
-  }, []);
-
-  // Generate noise buffer
-  const generateNoiseBuffer = useCallback((type: NoiseType, duration: number = 2) => {
-    if (Platform.OS !== 'web' || !audioContext.current) {
-      return null;
-    }
-    
-    const sampleRate = audioContext.current.sampleRate;
-    const length = sampleRate * duration;
-    const buffer = audioContext.current.createBuffer(1, length, sampleRate);
-    const data = buffer.getChannelData(0);
-    
-    let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
-    
-    for (let i = 0; i < length; i++) {
-      const white = Math.random() * 2 - 1;
-      
-      switch (type) {
-        case 'white':
-          data[i] = white * 0.3;
-          break;
-        case 'pink':
-          b0 = 0.99886 * b0 + white * 0.0555179;
-          b1 = 0.99332 * b1 + white * 0.0750759;
-          b2 = 0.96900 * b2 + white * 0.1538520;
-          b3 = 0.86650 * b3 + white * 0.3104856;
-          b4 = 0.55000 * b4 + white * 0.5329522;
-          b5 = -0.7616 * b5 - white * 0.0168980;
-          data[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.11;
-          b6 = white * 0.115926;
-          break;
-        case 'brown':
-          b0 = (b0 + (0.02 * white)) / 1.02;
-          data[i] = b0 * 3.5;
-          break;
-      }
-    }
-    
-    return buffer;
-  }, []);
-  
-  // Initialize Web Audio API
-  const initializeAudioContext = useCallback(async () => {
-    if (Platform.OS !== 'web' || audioContext.current) {
-      return;
-    }
-    
-    try {
-      audioContext.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-      noiseBuffer.current = generateNoiseBuffer(noiseType);
-      reverbBuffer.current = generateReverbBuffer(2, 2);
-      
-      // Create reverb node
-      if (reverbBuffer.current) {
-        reverbNode.current = audioContext.current.createConvolver();
-        reverbNode.current.buffer = reverbBuffer.current;
-      }
-    } catch (error) {
-      console.log('Web Audio API not supported:', error);
-    }
-  }, [generateNoiseBuffer, generateReverbBuffer, noiseType]);
-  
-  // Create oscillator with filter and LFO
-  const createOscillator = useCallback((id: string, frequency: number, type: OscillatorType = 'sine', layer?: SoundLayer) => {
-    if (Platform.OS !== 'web' || !audioContext.current) {
-      return null;
-    }
-    
-    const oscillator = audioContext.current.createOscillator();
-    const gainNode = audioContext.current.createGain();
-    const filterNode = audioContext.current.createBiquadFilter();
-    
-    oscillator.type = type;
-    oscillator.frequency.setValueAtTime(frequency, audioContext.current.currentTime);
-    gainNode.gain.setValueAtTime(0, audioContext.current.currentTime);
-    
-    // Setup filter
-    filterNode.type = 'lowpass';
-    filterNode.frequency.setValueAtTime(layer?.filterFreq || 1000, audioContext.current.currentTime);
-    filterNode.Q.setValueAtTime(layer?.resonance || 1, audioContext.current.currentTime);
-    
-    // Create LFO for filter modulation
-    if (layer?.lfoRate && layer?.lfoDepth) {
-      const lfo = audioContext.current.createOscillator();
-      const lfoGain = audioContext.current.createGain();
-      
-      lfo.frequency.setValueAtTime(layer.lfoRate, audioContext.current.currentTime);
-      lfoGain.gain.setValueAtTime((layer.filterFreq || 1000) * layer.lfoDepth, audioContext.current.currentTime);
-      
-      lfo.connect(lfoGain);
-      lfoGain.connect(filterNode.frequency);
-      lfo.start();
-      
-      lfoNodes.current.set(id + '_lfo', lfo);
-    }
-    
-    // Connect audio chain
-    oscillator.connect(filterNode);
-    filterNode.connect(gainNode);
-    
-    // Add reverb send
-    if (reverbNode.current && intensity > 0.3) {
-      const reverbSend = audioContext.current.createGain();
-      reverbSend.gain.setValueAtTime(intensity * 0.2, audioContext.current.currentTime);
-      gainNode.connect(reverbSend);
-      reverbSend.connect(reverbNode.current);
-      reverbNode.current.connect(audioContext.current.destination);
-    }
-    
-    gainNode.connect(audioContext.current.destination);
-    
-    oscillators.current.set(id, oscillator);
-    gainNodes.current.set(id, gainNode);
-    filterNodes.current.set(id, filterNode);
-    
-    oscillator.start();
-    return { oscillator, gainNode, filterNode };
-  }, [intensity]);
-  
-  // Create noise source with filter
-  const createNoiseSource = useCallback((layer?: SoundLayer) => {
-    if (Platform.OS !== 'web' || !audioContext.current || !noiseBuffer.current) {
-      return null;
-    }
-    
-    const source = audioContext.current.createBufferSource();
-    const gainNode = audioContext.current.createGain();
-    const filterNode = audioContext.current.createBiquadFilter();
-    
-    source.buffer = noiseBuffer.current;
-    source.loop = true;
-    gainNode.gain.setValueAtTime(0, audioContext.current.currentTime);
-    
-    // Setup filter based on intensity
-    filterNode.type = 'lowpass';
-    const cutoffFreq = 500 + (intensity * 2000); // 500Hz to 2500Hz based on intensity
-    filterNode.frequency.setValueAtTime(cutoffFreq, audioContext.current.currentTime);
-    filterNode.Q.setValueAtTime(1 + intensity * 3, audioContext.current.currentTime);
-    
-    // Create LFO for filter sweep
-    if (layer?.lfoRate) {
-      const lfo = audioContext.current.createOscillator();
-      const lfoGain = audioContext.current.createGain();
-      
-      lfo.frequency.setValueAtTime(layer.lfoRate, audioContext.current.currentTime);
-      lfoGain.gain.setValueAtTime(cutoffFreq * 0.3, audioContext.current.currentTime);
-      
-      lfo.connect(lfoGain);
-      lfoGain.connect(filterNode.frequency);
-      lfo.start();
-      
-      lfoNodes.current.set('noise_lfo', lfo);
-    }
-    
-    source.connect(filterNode);
-    filterNode.connect(gainNode);
-    
-    // Add reverb send
-    if (reverbNode.current && intensity > 0.4) {
-      const reverbSend = audioContext.current.createGain();
-      reverbSend.gain.setValueAtTime(intensity * 0.15, audioContext.current.currentTime);
-      gainNode.connect(reverbSend);
-      reverbSend.connect(reverbNode.current);
-      reverbNode.current.connect(audioContext.current.destination);
-    }
-    
-    gainNode.connect(audioContext.current.destination);
-    
-    gainNodes.current.set('noise', gainNode);
-    filterNodes.current.set('noise', filterNode);
-    source.start();
-    
-    return { source, gainNode, filterNode };
-  }, [intensity]);
-  
-  // Update layer volume
-  const updateLayerVolume = useCallback((layerId: string, volume: number) => {
-    const gainNode = gainNodes.current.get(layerId);
-    if (!gainNode || !audioContext.current) {
-      return;
-    }
-    
-    gainNode.gain.setTargetAtTime(volume, audioContext.current.currentTime, 0.1);
-  }, []);
+  // Use the new generative audio hook
+  useGenerativeAudio(
+    adaptiveSettings.layers,
+    adaptiveSettings,
+    volume,
+    intensity,
+    isPlaying
+  );
   
   // Adaptive sound adjustment based on time of day
   const getAdaptiveSettings = useCallback((timeOfDay: TimeOfDay, mode: keyof typeof SOUNDSCAPES) => {
@@ -300,7 +71,7 @@ export const [SoundProvider, useSound] = createContextHook(() => {
     
     switch (timeOfDay) {
       case 'morning':
-        baseSettings.layers = baseSettings.layers.map(layer => {
+        baseSettings.layers = baseSettings.layers.map((layer: SoundLayer) => {
           if (layer.type === 'pulse') return { ...layer, enabled: true, volume: 0.3, frequency: 80 };
           if (layer.type === 'binaural') return { ...layer, enabled: mode === 'focus', frequency: 40 };
           if (layer.type === 'noise') return { ...layer, volume: 0.2 };
@@ -308,7 +79,7 @@ export const [SoundProvider, useSound] = createContextHook(() => {
         });
         break;
       case 'afternoon':
-        baseSettings.layers = baseSettings.layers.map(layer => {
+        baseSettings.layers = baseSettings.layers.map((layer: SoundLayer) => {
           if (layer.type === 'pulse') return { ...layer, enabled: false };
           if (layer.type === 'binaural') return { ...layer, enabled: mode === 'focus', frequency: 30 };
           if (layer.type === 'pad') return { ...layer, volume: 0.6 };
@@ -316,7 +87,7 @@ export const [SoundProvider, useSound] = createContextHook(() => {
         });
         break;
       case 'evening':
-        baseSettings.layers = baseSettings.layers.map(layer => {
+        baseSettings.layers = baseSettings.layers.map((layer: SoundLayer) => {
           if (layer.type === 'pulse') return { ...layer, enabled: false };
           if (layer.type === 'binaural') return { ...layer, enabled: mode === 'relax', frequency: 10 };
           if (layer.type === 'noise') return { ...layer, volume: 0.4 };
@@ -324,7 +95,7 @@ export const [SoundProvider, useSound] = createContextHook(() => {
         });
         break;
       case 'night':
-        baseSettings.layers = baseSettings.layers.map(layer => {
+        baseSettings.layers = baseSettings.layers.map((layer: SoundLayer) => {
           if (layer.type === 'pulse') return { ...layer, enabled: false };
           if (layer.type === 'binaural') return { ...layer, enabled: mode === 'sleep', frequency: 6 };
           if (layer.type === 'pad') return { ...layer, volume: 0.3 };
@@ -337,108 +108,22 @@ export const [SoundProvider, useSound] = createContextHook(() => {
     return baseSettings;
   }, [adaptiveSettings]);
   
-  // Start generative sound layers
+  // Simplified audio control - the engine handles the complexity
   const startGenerativeLayers = useCallback(async () => {
-    if (Platform.OS !== 'web') return;
-    
-    await initializeAudioContext();
-    
-    const currentSettings = getAdaptiveSettings(adaptiveSettings.timeOfDay, currentMode || 'focus');
-    
-    // Stop existing oscillators
-    oscillators.current.forEach(osc => osc.stop());
-    oscillators.current.clear();
-    gainNodes.current.clear();
-    
-    // Create noise layer
-    const noiseLayer = currentSettings.layers.find(l => l.type === 'noise');
-    if (noiseLayer?.enabled) {
-      createNoiseSource(noiseLayer);
-      updateLayerVolume('noise', noiseLayer.volume * volume * (0.5 + intensity * 0.5));
-    }
-    
-    // Create pad layer (detuned sines for richness)
-    const padLayer = currentSettings.layers.find(l => l.type === 'pad');
-    if (padLayer?.enabled) {
-      const baseFreq = padLayer.frequency || 80;
-      // Create 3 detuned oscillators for rich pad sound
-      createOscillator('pad1', baseFreq, 'sine', padLayer);
-      createOscillator('pad2', baseFreq * 1.005, 'sine', padLayer); // Slightly detuned
-      createOscillator('pad3', baseFreq * 0.995, 'sine', padLayer); // Slightly detuned
-      
-      updateLayerVolume('pad1', padLayer.volume * volume * 0.4);
-      updateLayerVolume('pad2', padLayer.volume * volume * 0.3);
-      updateLayerVolume('pad3', padLayer.volume * volume * 0.3);
-    }
-    
-    // Create pulse layer with gentle volume modulation
-    const pulseLayer = currentSettings.layers.find(l => l.type === 'pulse');
-    if (pulseLayer?.enabled && pulseLayer.frequency) {
-      createOscillator('pulse', pulseLayer.frequency, 'triangle', pulseLayer);
-      
-      // Create gentle volume arc with LFO
-      const pulseGain = gainNodes.current.get('pulse');
-      if (pulseGain && audioContext.current) {
-        const lfo = audioContext.current.createOscillator();
-        const lfoGain = audioContext.current.createGain();
-        
-        lfo.frequency.setValueAtTime(pulseLayer.lfoRate || 0.1, audioContext.current.currentTime);
-        lfoGain.gain.setValueAtTime(pulseLayer.volume * volume * 0.3, audioContext.current.currentTime);
-        
-        lfo.connect(lfoGain);
-        lfoGain.connect(pulseGain.gain);
-        lfo.start();
-        
-        lfoNodes.current.set('pulse_lfo', lfo);
-      }
-      
-      updateLayerVolume('pulse', pulseLayer.volume * volume * (0.3 + intensity * 0.4));
-    }
-    
-    // Create binaural beats
-    const binauralLayer = currentSettings.layers.find(l => l.type === 'binaural');
-    if (binauralLayer?.enabled && binauralLayer.frequency) {
-      const baseFreq = 200;
-      createOscillator('binaural_left', baseFreq, 'sine');
-      createOscillator('binaural_right', baseFreq + binauralLayer.frequency, 'sine');
-      updateLayerVolume('binaural_left', binauralLayer.volume * volume);
-      updateLayerVolume('binaural_right', binauralLayer.volume * volume);
-    }
-  }, [initializeAudioContext, getAdaptiveSettings, adaptiveSettings.timeOfDay, currentMode, volume, intensity, createNoiseSource, createOscillator, updateLayerVolume]);
+    // The useGenerativeAudio hook handles this automatically
+    console.log('Generative layers managed by audio engine');
+  }, []);
   
-  // Stop generative layers
   const stopGenerativeLayers = useCallback(() => {
-    if (Platform.OS !== 'web') {
-      return;
-    }
-    
-    oscillators.current.forEach(osc => {
-      try {
-        osc.stop();
-      } catch {
-        // Oscillator might already be stopped
-      }
-    });
-    
-    lfoNodes.current.forEach(lfo => {
-      try {
-        lfo.stop();
-      } catch {
-        // LFO might already be stopped
-      }
-    });
-    
-    oscillators.current.clear();
-    gainNodes.current.clear();
-    filterNodes.current.clear();
-    lfoNodes.current.clear();
+    // The useGenerativeAudio hook handles this automatically
+    console.log('Generative layers stopped by audio engine');
   }, []);
   
   // Update layer settings
   const updateLayer = useCallback((layerId: string, updates: Partial<SoundLayer>) => {
-    setAdaptiveSettings(prev => ({
+    setAdaptiveSettings((prev: AdaptiveSettings) => ({
       ...prev,
-      layers: prev.layers.map(layer => 
+      layers: prev.layers.map((layer: SoundLayer) => 
         layer.id === layerId ? { ...layer, ...updates } : layer
       )
     }));
@@ -474,8 +159,8 @@ export const [SoundProvider, useSound] = createContextHook(() => {
     const preset = presets.find(p => p.id === presetId);
     if (!preset) return;
     
-    setCurrentMode(preset.mode);
-    setAdaptiveSettings(prev => ({ ...prev, layers: preset.layers }));
+    setCurrentMode(preset.mode as keyof typeof SOUNDSCAPES);
+    setAdaptiveSettings((prev: AdaptiveSettings) => ({ ...prev, layers: preset.layers }));
     setVolume(preset.volume);
     setNoiseType(preset.noiseType);
     setBinauralFreq(preset.binauralFreq);
@@ -595,10 +280,9 @@ export const [SoundProvider, useSound] = createContextHook(() => {
     if (soundRef.current) {
       await soundRef.current.stopAsync();
     }
-    stopGenerativeLayers();
     setIsPlaying(false);
     setElapsedTime(0);
-  }, [stopGenerativeLayers]);
+  }, []);
 
   const togglePlayPause = useCallback(async () => {
     if (!currentMode) return;
@@ -607,7 +291,6 @@ export const [SoundProvider, useSound] = createContextHook(() => {
       if (soundRef.current) {
         await soundRef.current.pauseAsync();
       }
-      stopGenerativeLayers();
       setIsPlaying(false);
     } else {
       if (!soundRef.current) {
@@ -616,10 +299,9 @@ export const [SoundProvider, useSound] = createContextHook(() => {
       if (soundRef.current) {
         await soundRef.current.playAsync();
       }
-      await startGenerativeLayers();
       setIsPlaying(true);
     }
-  }, [currentMode, isPlaying, loadSound, startGenerativeLayers, stopGenerativeLayers]);
+  }, [currentMode, isPlaying, loadSound]);
 
   useEffect(() => {
     loadSettings();
@@ -672,59 +354,15 @@ export const [SoundProvider, useSound] = createContextHook(() => {
     const interval = setInterval(() => {
       const newTimeOfDay = getTimeOfDay();
       if (newTimeOfDay !== adaptiveSettings.timeOfDay) {
-        setAdaptiveSettings(prev => ({ ...prev, timeOfDay: newTimeOfDay }));
+        setAdaptiveSettings((prev: AdaptiveSettings) => ({ ...prev, timeOfDay: newTimeOfDay }));
       }
     }, 60000);
     
     return () => clearInterval(interval);
   }, [adaptiveSettings.timeOfDay]);
   
-  // Update generative layers when volume changes
-  useEffect(() => {
-    if (!isPlaying || Platform.OS !== 'web') {
-      return;
-    }
-    
-    adaptiveSettings.layers.forEach(layer => {
-      if (layer.enabled) {
-        updateLayerVolume(layer.id, layer.volume * volume);
-      }
-    });
-  }, [volume, isPlaying, adaptiveSettings.layers, updateLayerVolume]);
-  
-  // Regenerate noise buffer when noise type changes
-  useEffect(() => {
-    if (Platform.OS !== 'web' || !audioContext.current) {
-      return;
-    }
-    
-    noiseBuffer.current = generateNoiseBuffer(noiseType);
-  }, [noiseType, generateNoiseBuffer]);
-  
-  // Update sound layers when intensity changes
-  useEffect(() => {
-    if (!isPlaying || Platform.OS !== 'web') {
-      return;
-    }
-    
-    // Update filter frequencies based on intensity
-    filterNodes.current.forEach((filter, id) => {
-      if (audioContext.current) {
-        const baseFreq = id === 'noise' ? 500 : 800;
-        const newFreq = baseFreq + (intensity * 2000);
-        filter.frequency.setTargetAtTime(newFreq, audioContext.current.currentTime, 0.1);
-        filter.Q.setTargetAtTime(1 + intensity * 3, audioContext.current.currentTime, 0.1);
-      }
-    });
-    
-    // Update volumes based on intensity
-    adaptiveSettings.layers.forEach(layer => {
-      if (layer.enabled) {
-        const intensityMultiplier = 0.5 + intensity * 0.5;
-        updateLayerVolume(layer.id, layer.volume * volume * intensityMultiplier);
-      }
-    });
-  }, [intensity, isPlaying, adaptiveSettings.layers, volume, updateLayerVolume]);
+  // Audio engine handles all the complex audio processing automatically
+  // Volume, intensity, and layer changes are managed by useGenerativeAudio hook
 
   useEffect(() => {
     if (soundRef.current) {
