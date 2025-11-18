@@ -8,6 +8,8 @@ import {
   Animated,
   ScrollView,
   Switch,
+  Share,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -31,10 +33,12 @@ import {
   Upload,
   Coffee,
   Briefcase,
+  Share2,
 } from "lucide-react-native";
 import { router } from "expo-router";
 import { useSound } from "@/providers/SoundProvider";
 import { SOUNDSCAPES } from "@/constants/soundscapes";
+import * as Haptics from "expo-haptics";
 import CustomSlider from "@/components/CustomSlider";
 import ProgressArc from "@/components/ProgressArc";
 import { BreathingGuide } from "@/components/BreathingGuide";
@@ -171,6 +175,40 @@ export default function SessionScreen() {
       case 'pulse': return 'Soft Pulse';
       case 'binaural': return 'Binaural Beat';
       default: return type;
+    }
+  };
+
+  const handleSharePreset = async (preset: any) => {
+    try {
+      const presetData = JSON.stringify(preset, null, 2);
+      const result = await Share.share({
+        message: `Check out my "${preset.name}" preset for ADHD Focus Music!\n\n${presetData}`,
+        title: `Share ${preset.name} Preset`,
+      });
+
+      if (result.action === Share.sharedAction) {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    } catch (error) {
+      console.error('Error sharing preset:', error);
+      Alert.alert('Share Error', 'Could not share preset. Please try again.');
+    }
+  };
+
+  const handleShareAllPresets = async () => {
+    try {
+      const presetsData = exportPresets();
+      const result = await Share.share({
+        message: `My ADHD Focus Music Presets (${presets.length} total)\n\n${presetsData}`,
+        title: 'Share All Presets',
+      });
+
+      if (result.action === Share.sharedAction) {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    } catch (error) {
+      console.error('Error sharing presets:', error);
+      Alert.alert('Share Error', 'Could not share presets. Please try again.');
     }
   };
 
@@ -496,14 +534,11 @@ export default function SessionScreen() {
                   </TouchableOpacity>
                   
                   <TouchableOpacity
-                    onPress={() => {
-                      // Simple export - in a real app you'd use share API
-                      console.log('Export presets:', exportPresets());
-                    }}
+                    onPress={handleShareAllPresets}
                     style={styles.presetActionButton}
                   >
-                    <Download color="rgba(255,255,255,0.8)" size={16} />
-                    <Text style={styles.presetActionText}>Export</Text>
+                    <Share2 color="rgba(255,255,255,0.8)" size={16} />
+                    <Text style={styles.presetActionText}>Share All</Text>
                   </TouchableOpacity>
                   
                   <TouchableOpacity
@@ -537,12 +572,20 @@ export default function SessionScreen() {
                         <Text style={styles.presetMode}>{SOUNDSCAPES[preset.mode].name}</Text>
                       </TouchableOpacity>
                       
-                      <TouchableOpacity
-                        onPress={() => deletePreset(preset.id)}
-                        style={styles.deletePresetButton}
-                      >
-                        <X color="rgba(255,255,255,0.6)" size={16} />
-                      </TouchableOpacity>
+                      <View style={styles.presetActions}>
+                        <TouchableOpacity
+                          onPress={() => handleSharePreset(preset)}
+                          style={styles.presetActionIcon}
+                        >
+                          <Share2 color="rgba(255,255,255,0.6)" size={16} />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => deletePreset(preset.id)}
+                          style={styles.presetActionIcon}
+                        >
+                          <X color="rgba(255,255,255,0.6)" size={16} />
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   ))}
                   
@@ -1019,6 +1062,13 @@ const styles = StyleSheet.create({
     color: "rgba(255, 255, 255, 0.6)",
     fontSize: 12,
     marginTop: 2,
+  },
+  presetActions: {
+    flexDirection: "row",
+    gap: 4,
+  },
+  presetActionIcon: {
+    padding: 8,
   },
   deletePresetButton: {
     padding: 8,
