@@ -27,4 +27,17 @@ module.exports = {
     '!**/app/**',
     '!**/components/**',
   ],
+  // Use jsdom for Web Audio tests
+  projects: [
+    {
+      displayName: 'node',
+      testEnvironment: 'node',
+      testMatch: ['**/__tests__/presets.test.ts'],
+    },
+    {
+      displayName: 'jsdom',
+      testEnvironment: 'jsdom',
+      testMatch: ['**/audio-engine/__tests__/web.test.ts'],
+    },
+  ],
 };
