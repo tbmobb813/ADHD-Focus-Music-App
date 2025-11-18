@@ -35,6 +35,7 @@ import { useSound } from "@/providers/SoundProvider";
 import { SOUNDSCAPES } from "@/constants/soundscapes";
 import CustomSlider from "@/components/CustomSlider";
 import ProgressArc from "@/components/ProgressArc";
+import { BreathingGuide } from "@/components/BreathingGuide";
 
 const { width, height } = Dimensions.get("window");
 
@@ -72,7 +73,6 @@ export default function SessionScreen() {
   const [showPresets, setShowPresets] = useState(false);
   const [presetName, setPresetName] = useState('');
   const [showSavePreset, setShowSavePreset] = useState(false);
-  const breathAnim = useRef(new Animated.Value(0.3)).current;
   const particleAnims = useRef(
     Array.from({ length: 6 }, () => ({
       x: new Animated.Value(0),
@@ -82,25 +82,6 @@ export default function SessionScreen() {
   ).current;
 
   const mode = currentMode ? SOUNDSCAPES[currentMode] : SOUNDSCAPES.focus;
-
-  useEffect(() => {
-    if (showBreathing) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(breathAnim, {
-            toValue: 1,
-            duration: 4000,
-            useNativeDriver: true,
-          }),
-          Animated.timing(breathAnim, {
-            toValue: 0.3,
-            duration: 4000,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-    }
-  }, [showBreathing, breathAnim]);
 
   useEffect(() => {
     if (isPlaying) {
@@ -215,17 +196,7 @@ export default function SessionScreen() {
               />
             ))}
             
-            {showBreathing && (
-              <Animated.View
-                style={[
-                  styles.breathingCircle,
-                  {
-                    transform: [{ scale: breathAnim }],
-                    opacity: breathAnim,
-                  },
-                ]}
-              />
-            )}
+            <BreathingGuide isActive={showBreathing} cycleDuration={8} />
 
             <View style={styles.centerIcon}>{mode.icon}</View>
           </View>
@@ -688,15 +659,6 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
     backgroundColor: "rgba(255, 255, 255, 0.6)",
-  },
-  breathingCircle: {
-    position: "absolute",
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderWidth: 2,
-    borderColor: "rgba(255, 255, 255, 0.3)",
   },
   centerIcon: {
     width: 80,

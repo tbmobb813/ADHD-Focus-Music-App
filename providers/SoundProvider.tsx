@@ -4,6 +4,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import createContextHook from "@nkzw/create-context-hook";
 import { SOUNDSCAPES } from "@/constants/soundscapes";
 import { Platform } from "react-native";
+import * as Haptics from "expo-haptics";
 import { useGenerativeAudio } from "@/hooks/useGenerativeAudio";
 import {
   NoiseType,
@@ -12,7 +13,8 @@ import {
   Preset,
   AdaptiveSettings,
   SessionHistory,
-  SessionStats
+  SessionStats,
+  SmartRecommendations
 } from "@/types/audio";
 
 // Get current time of day
@@ -148,7 +150,10 @@ export const [SoundProvider, useSound] = createContextHook(() => {
   // Preset management
   const savePreset = useCallback(async (name: string) => {
     if (!currentMode) return;
-    
+
+    // Haptic feedback on save
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
     const preset: Preset = {
       id: Date.now().toString(),
       name,
@@ -159,11 +164,11 @@ export const [SoundProvider, useSound] = createContextHook(() => {
       binauralFreq,
       createdAt: Date.now(),
     };
-    
+
     const newPresets = [...presets, preset];
     setPresets(newPresets);
     setCurrentPreset(preset.id);
-    
+
     try {
       await AsyncStorage.setItem('soundscape_presets', JSON.stringify(newPresets));
     } catch (error) {
@@ -174,7 +179,10 @@ export const [SoundProvider, useSound] = createContextHook(() => {
   const loadPreset = useCallback(async (presetId: string) => {
     const preset = presets.find(p => p.id === presetId);
     if (!preset) return;
-    
+
+    // Haptic feedback on load
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
     setCurrentMode(preset.mode as keyof typeof SOUNDSCAPES);
     setAdaptiveSettings((prev: AdaptiveSettings) => ({ ...prev, layers: preset.layers }));
     setVolume(preset.volume);
@@ -184,13 +192,16 @@ export const [SoundProvider, useSound] = createContextHook(() => {
   }, [presets]);
   
   const deletePreset = useCallback(async (presetId: string) => {
+    // Haptic feedback on delete
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
     const newPresets = presets.filter(p => p.id !== presetId);
     setPresets(newPresets);
-    
+
     if (currentPreset === presetId) {
       setCurrentPreset(null);
     }
-    
+
     try {
       await AsyncStorage.setItem('soundscape_presets', JSON.stringify(newPresets));
     } catch (error) {
@@ -246,6 +257,13 @@ export const [SoundProvider, useSound] = createContextHook(() => {
 
   const endSession = useCallback(async (completed: boolean) => {
     if (!currentSessionRef.current) return;
+
+    // Haptic feedback - heavy if completed, light if stopped early
+    if (completed) {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } else {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
 
     const now = Date.now();
     const session: SessionHistory = {
@@ -379,6 +397,83 @@ export const [SoundProvider, useSound] = createContextHook(() => {
     }
   }, []);
 
+  // Smart recommendations based on session history
+  const getSmartRecommendations = useCallback((): SmartRecommendations | null => {
+    if (sessionHistory.length < 3) {
+      // Not enough data for recommendations
+      return null;
+    }
+
+    // Analyze completed sessions only for better recommendations
+    const completedSessions = sessionHistory.filter(s => s.completed);
+
+    if (completedSessions.length === 0) {
+      return null;
+    }
+
+    // Find best time of day (highest completion rate)
+    const timeOfDayStats: Record<TimeOfDay, { completed: number; total: number }> = {
+      morning: { completed: 0, total: 0 },
+      afternoon: { completed: 0, total: 0 },
+      evening: { completed: 0, total: 0 },
+      night: { completed: 0, total: 0 },
+    };
+
+    sessionHistory.forEach(session => {
+      const hour = new Date(session.startedAt).getHours();
+      let timeOfDay: TimeOfDay;
+      if (hour >= 5 && hour < 12) timeOfDay = 'morning';
+      else if (hour >= 12 && hour < 17) timeOfDay = 'afternoon';
+      else if (hour >= 17 && hour < 22) timeOfDay = 'evening';
+      else timeOfDay = 'night';
+
+      timeOfDayStats[timeOfDay].total++;
+      if (session.completed) timeOfDayStats[timeOfDay].completed++;
+    });
+
+    // Find time of day with highest success rate
+    let bestTimeOfDay: TimeOfDay = 'morning';
+    let highestSuccessRate = 0;
+    (Object.keys(timeOfDayStats) as TimeOfDay[]).forEach(time => {
+      const stats = timeOfDayStats[time];
+      if (stats.total > 0) {
+        const successRate = stats.completed / stats.total;
+        if (successRate > highestSuccessRate) {
+          highestSuccessRate = successRate;
+          bestTimeOfDay = time;
+        }
+      }
+    });
+
+    // Calculate average intensity and duration of completed sessions
+    const avgIntensity = completedSessions.reduce((sum, s) => sum + s.intensity, 0) / completedSessions.length;
+    const avgDuration = Math.round(completedSessions.reduce((sum, s) => sum + s.duration, 0) / completedSessions.length);
+
+    // Most successful mode
+    const modeCounts: Record<string, number> = {};
+    completedSessions.forEach(s => {
+      modeCounts[s.mode] = (modeCounts[s.mode] || 0) + 1;
+    });
+    const suggestedMode = Object.entries(modeCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'focus';
+
+    // Calculate confidence based on sample size
+    const confidence = Math.min(completedSessions.length / 10, 1); // Max confidence at 10+ sessions
+
+    // Generate reason
+    const successRate = Math.round((completedSessions.length / sessionHistory.length) * 100);
+    let reason = `Based on ${completedSessions.length} completed sessions (${successRate}% success rate), `;
+    reason += `you focus best during ${bestTimeOfDay} with ${Math.round(avgDuration / 60)}-minute ${suggestedMode} sessions.`;
+
+    return {
+      suggestedMode,
+      suggestedDuration: avgDuration,
+      suggestedIntensity: avgIntensity,
+      bestTimeOfDay,
+      confidence,
+      reason,
+    };
+  }, [sessionHistory]);
+
   const loadSettings = useCallback(async () => {
     try {
       const settings = await AsyncStorage.getItem("soundscape_settings");
@@ -475,6 +570,9 @@ export const [SoundProvider, useSound] = createContextHook(() => {
   const togglePlayPause = useCallback(async () => {
     if (!currentMode) return;
 
+    // Haptic feedback on play/pause
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
     if (isPlaying) {
       if (soundRef.current) {
         await soundRef.current.pauseAsync();
@@ -506,18 +604,42 @@ export const [SoundProvider, useSound] = createContextHook(() => {
     };
   }, [loadSettings]);
 
+  // Background audio and interruption handling
   useEffect(() => {
     if (Platform.OS === "web") {
       return;
     }
-    
-    Audio.setAudioModeAsync({
-      allowsRecordingIOS: false,
-      playsInSilentModeIOS: true,
-      staysActiveInBackground: true,
-      shouldDuckAndroid: false,
-    });
-  }, []);
+
+    const setupAudio = async () => {
+      try {
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: true,
+          shouldDuckAndroid: false,
+          interruptionModeIOS: 1, // Allow other audio sources to interrupt
+          interruptionModeAndroid: 1, // Do not mix with other audio
+        });
+
+        // Set up interruption handler
+        if (soundRef.current) {
+          soundRef.current.setOnPlaybackStatusUpdate((status) => {
+            if (!status.isLoaded) return;
+
+            // Handle audio interruptions (phone calls, alarms, etc.)
+            if (status.isLoaded && !status.isPlaying && isPlaying) {
+              console.log('Audio interrupted - pausing session');
+              setIsPlaying(false);
+            }
+          });
+        }
+      } catch (error) {
+        console.error('Error setting up audio:', error);
+      }
+    };
+
+    setupAudio();
+  }, [isPlaying]);
 
   useEffect(() => {
     if (isPlaying && !timerRef.current) {
@@ -609,5 +731,6 @@ export const [SoundProvider, useSound] = createContextHook(() => {
     sessionHistory,
     sessionStats,
     clearSessionHistory,
+    getSmartRecommendations,
   };
 });

@@ -80,3 +80,12 @@ export interface SessionStats {
   currentStreak: number;
   longestStreak: number;
 }
+
+export interface SmartRecommendations {
+  suggestedMode: string;
+  suggestedDuration: number; // in seconds
+  suggestedIntensity: number;
+  bestTimeOfDay: TimeOfDay;
+  confidence: number; // 0-1, how confident we are in these recommendations
+  reason: string;
+}
