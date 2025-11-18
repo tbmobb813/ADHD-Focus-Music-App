@@ -89,3 +89,15 @@ export interface SmartRecommendations {
   confidence: number; // 0-1, how confident we are in these recommendations
   reason: string;
 }
+
+export interface PomodoroSettings {
+  enabled: boolean;
+  workDuration: number; // in seconds (default 25 min = 1500s)
+  breakDuration: number; // in seconds (default 5 min = 300s)
+  longBreakDuration: number; // in seconds (default 15 min = 900s)
+  longBreakInterval: number; // after how many work sessions (default 4)
+  autoStartBreaks: boolean;
+  autoStartWork: boolean;
+}
+
+export type PomodoroPhase = 'work' | 'break' | 'longBreak';

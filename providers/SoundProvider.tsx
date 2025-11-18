@@ -14,7 +14,9 @@ import {
   AdaptiveSettings,
   SessionHistory,
   SessionStats,
-  SmartRecommendations
+  SmartRecommendations,
+  PomodoroSettings,
+  PomodoroPhase
 } from "@/types/audio";
 
 // Get current time of day
@@ -66,6 +68,19 @@ export const [SoundProvider, useSound] = createContextHook(() => {
     currentStreak: 0,
     longestStreak: 0,
   });
+
+  // Pomodoro timer
+  const [pomodoroSettings, setPomodoroSettings] = useState<PomodoroSettings>({
+    enabled: false,
+    workDuration: 25 * 60, // 25 minutes
+    breakDuration: 5 * 60, // 5 minutes
+    longBreakDuration: 15 * 60, // 15 minutes
+    longBreakInterval: 4,
+    autoStartBreaks: true,
+    autoStartWork: false,
+  });
+  const [pomodoroPhase, setPomodoroPhase] = useState<PomodoroPhase>('work');
+  const [pomodoroCompletedCycles, setPomodoroCompletedCycles] = useState(0);
 
   const soundRef = useRef<Audio.Sound | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -553,6 +568,52 @@ export const [SoundProvider, useSound] = createContextHook(() => {
     }
   }, [currentMode, volume]);
 
+  // Handle Pomodoro phase transitions
+  const handlePomodoroTransition = useCallback(async () => {
+    if (!pomodoroSettings.enabled) return;
+
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+    if (pomodoroPhase === 'work') {
+      const nextCycle = pomodoroCompletedCycles + 1;
+      setPomodoroCompletedCycles(nextCycle);
+
+      // Check if it's time for long break
+      if (nextCycle % pomodoroSettings.longBreakInterval === 0) {
+        setPomodoroPhase('longBreak');
+        setSessionDuration(pomodoroSettings.longBreakDuration);
+        setElapsedTime(0);
+
+        if (pomodoroSettings.autoStartBreaks) {
+          setIsPlaying(true);
+        } else {
+          setIsPlaying(false);
+        }
+      } else {
+        setPomodoroPhase('break');
+        setSessionDuration(pomodoroSettings.breakDuration);
+        setElapsedTime(0);
+
+        if (pomodoroSettings.autoStartBreaks) {
+          setIsPlaying(true);
+        } else {
+          setIsPlaying(false);
+        }
+      }
+    } else {
+      // Back to work after break
+      setPomodoroPhase('work');
+      setSessionDuration(pomodoroSettings.workDuration);
+      setElapsedTime(0);
+
+      if (pomodoroSettings.autoStartWork) {
+        setIsPlaying(true);
+      } else {
+        setIsPlaying(false);
+      }
+    }
+  }, [pomodoroSettings, pomodoroPhase, pomodoroCompletedCycles]);
+
   const handleStop = useCallback(async () => {
     // End session (not completed if stopped manually)
     if (currentSessionRef.current) {
@@ -646,7 +707,12 @@ export const [SoundProvider, useSound] = createContextHook(() => {
       timerRef.current = setInterval(() => {
         setElapsedTime((prev) => {
           if (prev >= sessionDuration) {
-            handleStop();
+            // Check if Pomodoro mode is enabled
+            if (pomodoroSettings.enabled) {
+              handlePomodoroTransition();
+            } else {
+              handleStop();
+            }
             return 0;
           }
           return prev + 1;
@@ -656,7 +722,7 @@ export const [SoundProvider, useSound] = createContextHook(() => {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
-  }, [isPlaying, sessionDuration, handleStop]);
+  }, [isPlaying, sessionDuration, handleStop, pomodoroSettings.enabled, handlePomodoroTransition]);
 
   useEffect(() => {
     saveSettings();
@@ -732,5 +798,12 @@ export const [SoundProvider, useSound] = createContextHook(() => {
     sessionStats,
     clearSessionHistory,
     getSmartRecommendations,
+    // Pomodoro timer
+    pomodoroSettings,
+    setPomodoroSettings,
+    pomodoroPhase,
+    setPomodoroPhase,
+    pomodoroCompletedCycles,
+    setPomodoroCompletedCycles,
   };
 });

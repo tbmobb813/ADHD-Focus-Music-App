@@ -29,6 +29,8 @@ import {
   Save,
   Download,
   Upload,
+  Coffee,
+  Briefcase,
 } from "lucide-react-native";
 import { router } from "expo-router";
 import { useSound } from "@/providers/SoundProvider";
@@ -36,6 +38,7 @@ import { SOUNDSCAPES } from "@/constants/soundscapes";
 import CustomSlider from "@/components/CustomSlider";
 import ProgressArc from "@/components/ProgressArc";
 import { BreathingGuide } from "@/components/BreathingGuide";
+import { AudioVisualizer } from "@/components/AudioVisualizer";
 
 const { width, height } = Dimensions.get("window");
 
@@ -65,12 +68,18 @@ export default function SessionScreen() {
     deletePreset,
     exportPresets,
     importPresets,
+    pomodoroSettings,
+    setPomodoroSettings,
+    pomodoroPhase,
+    pomodoroCompletedCycles,
   } = useSound();
 
   const [showBreathing, setShowBreathing] = useState(false);
+  const [showVisualizer, setShowVisualizer] = useState(true);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showAdaptive, setShowAdaptive] = useState(false);
   const [showPresets, setShowPresets] = useState(false);
+  const [showPomodoro, setShowPomodoro] = useState(false);
   const [presetName, setPresetName] = useState('');
   const [showSavePreset, setShowSavePreset] = useState(false);
   const particleAnims = useRef(
@@ -180,7 +189,7 @@ export default function SessionScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.visualizer}>
-            {particleAnims.map((anim, index) => (
+            {!showVisualizer && particleAnims.map((anim, index) => (
               <Animated.View
                 key={index}
                 style={[
@@ -195,7 +204,13 @@ export default function SessionScreen() {
                 ]}
               />
             ))}
-            
+
+            {showVisualizer && (
+              <View style={styles.visualizerWrapper}>
+                <AudioVisualizer isActive={isPlaying} intensity={intensity} />
+              </View>
+            )}
+
             <BreathingGuide isActive={showBreathing} cycleDuration={8} />
 
             <View style={styles.centerIcon}>{mode.icon}</View>
@@ -295,16 +310,159 @@ export default function SessionScreen() {
               ))}
             </View>
 
+            <View style={styles.visualControlsRow}>
+              <TouchableOpacity
+                onPress={() => setShowBreathing(!showBreathing)}
+                style={styles.visualControlButton}
+              >
+                <Wind color="rgba(255,255,255,0.8)" size={20} />
+                <Text style={styles.breathingButtonText}>
+                  {showBreathing ? "Hide" : "Show"} Breathing
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => setShowVisualizer(!showVisualizer)}
+                style={styles.visualControlButton}
+              >
+                <Waves color="rgba(255,255,255,0.8)" size={20} />
+                <Text style={styles.breathingButtonText}>
+                  {showVisualizer ? "Hide" : "Show"} Visualizer
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Pomodoro Section */}
             <TouchableOpacity
-              onPress={() => setShowBreathing(!showBreathing)}
-              style={styles.breathingButton}
+              onPress={() => setShowPomodoro(!showPomodoro)}
+              style={styles.sectionHeader}
             >
-              <Wind color="rgba(255,255,255,0.8)" size={20} />
-              <Text style={styles.breathingButtonText}>
-                {showBreathing ? "Hide" : "Show"} Breathing Guide
-              </Text>
+              <View style={styles.sectionHeaderContent}>
+                <Coffee color="rgba(255,255,255,0.8)" size={20} />
+                <Text style={styles.sectionHeaderText}>Pomodoro Timer</Text>
+                {pomodoroSettings.enabled && (
+                  <View style={styles.pomodoroStatus}>
+                    {pomodoroPhase === 'work' ? (
+                      <Briefcase color="#10b981" size={14} />
+                    ) : (
+                      <Coffee color="#f59e0b" size={14} />
+                    )}
+                    <Text style={styles.pomodoroStatusText}>
+                      {pomodoroPhase === 'work' ? 'Work' : pomodoroPhase === 'longBreak' ? 'Long Break' : 'Break'} {pomodoroCompletedCycles}/4
+                    </Text>
+                  </View>
+                )}
+              </View>
+              {showPomodoro ? (
+                <ChevronUp color="rgba(255,255,255,0.6)" size={20} />
+              ) : (
+                <ChevronDown color="rgba(255,255,255,0.6)" size={20} />
+              )}
             </TouchableOpacity>
-            
+
+            {showPomodoro && (
+              <View style={styles.pomodoroContainer}>
+                <View style={styles.pomodoroEnableRow}>
+                  <Text style={styles.pomodoroLabel}>Enable Pomodoro Mode</Text>
+                  <Switch
+                    value={pomodoroSettings.enabled}
+                    onValueChange={(value) =>
+                      setPomodoroSettings({ ...pomodoroSettings, enabled: value })
+                    }
+                    trackColor={{ false: '#3e3e3e', true: '#8b5cf6' }}
+                    thumbColor="#fff"
+                  />
+                </View>
+
+                {pomodoroSettings.enabled && (
+                  <>
+                    <View style={styles.pomodoroRow}>
+                      <Text style={styles.pomodoroLabel}>Work Duration</Text>
+                      <View style={styles.pomodoroDurations}>
+                        {[15, 25, 30, 45].map((mins) => (
+                          <TouchableOpacity
+                            key={`work-${mins}`}
+                            onPress={() =>
+                              setPomodoroSettings({ ...pomodoroSettings, workDuration: mins * 60 })
+                            }
+                            style={[
+                              styles.pomodoroDuration,
+                              pomodoroSettings.workDuration === mins * 60 && styles.pomodoroDurationActive
+                            ]}
+                          >
+                            <Text style={[
+                              styles.pomodoroDurationText,
+                              pomodoroSettings.workDuration === mins * 60 && styles.pomodoroDurationTextActive
+                            ]}>
+                              {mins}m
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </View>
+
+                    <View style={styles.pomodoroRow}>
+                      <Text style={styles.pomodoroLabel}>Break Duration</Text>
+                      <View style={styles.pomodoroDurations}>
+                        {[3, 5, 10].map((mins) => (
+                          <TouchableOpacity
+                            key={`break-${mins}`}
+                            onPress={() =>
+                              setPomodoroSettings({ ...pomodoroSettings, breakDuration: mins * 60 })
+                            }
+                            style={[
+                              styles.pomodoroDuration,
+                              pomodoroSettings.breakDuration === mins * 60 && styles.pomodoroDurationActive
+                            ]}
+                          >
+                            <Text style={[
+                              styles.pomodoroDurationText,
+                              pomodoroSettings.breakDuration === mins * 60 && styles.pomodoroDurationTextActive
+                            ]}>
+                              {mins}m
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </View>
+
+                    <View style={styles.pomodoroRow}>
+                      <Text style={styles.pomodoroLabel}>Auto-start Breaks</Text>
+                      <Switch
+                        value={pomodoroSettings.autoStartBreaks}
+                        onValueChange={(value) =>
+                          setPomodoroSettings({ ...pomodoroSettings, autoStartBreaks: value })
+                        }
+                        trackColor={{ false: '#3e3e3e', true: '#8b5cf6' }}
+                        thumbColor="#fff"
+                      />
+                    </View>
+
+                    <View style={styles.pomodoroRow}>
+                      <Text style={styles.pomodoroLabel}>Auto-start Work</Text>
+                      <Switch
+                        value={pomodoroSettings.autoStartWork}
+                        onValueChange={(value) =>
+                          setPomodoroSettings({ ...pomodoroSettings, autoStartWork: value })
+                        }
+                        trackColor={{ false: '#3e3e3e', true: '#8b5cf6' }}
+                        thumbColor="#fff"
+                      />
+                    </View>
+
+                    <View style={styles.pomodoroInfo}>
+                      <Text style={styles.pomodoroInfoText}>
+                        Pomodoro cycles: {pomodoroSettings.workDuration / 60}m work → {pomodoroSettings.breakDuration / 60}m break
+                      </Text>
+                      <Text style={styles.pomodoroInfoText}>
+                        Every 4th cycle: {pomodoroSettings.longBreakDuration / 60}m long break
+                      </Text>
+                    </View>
+                  </>
+                )}
+              </View>
+            )}
+
             {/* Presets Section */}
             <TouchableOpacity
               onPress={() => setShowPresets(!showPresets)}
@@ -1090,5 +1248,96 @@ const styles = StyleSheet.create({
   layerSlider: {
     height: 30,
     marginBottom: 8,
+  },
+  pomodoroContainer: {
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 12,
+  },
+  pomodoroEnableRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  pomodoroRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  pomodoroLabel: {
+    color: "rgba(255, 255, 255, 0.8)",
+    fontSize: 14,
+    fontWeight: "500" as const,
+  },
+  pomodoroDurations: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  pomodoroDuration: {
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "transparent",
+  },
+  pomodoroDurationActive: {
+    backgroundColor: "rgba(139, 92, 246, 0.2)",
+    borderColor: "#8b5cf6",
+  },
+  pomodoroDurationText: {
+    color: "rgba(255, 255, 255, 0.7)",
+    fontSize: 12,
+    fontWeight: "600" as const,
+  },
+  pomodoroDurationTextActive: {
+    color: "#fff",
+  },
+  pomodoroStatus: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginLeft: 8,
+  },
+  pomodoroStatusText: {
+    color: "rgba(255, 255, 255, 0.6)",
+    fontSize: 12,
+  },
+  pomodoroInfo: {
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: "rgba(139, 92, 246, 0.1)",
+    borderRadius: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: "#8b5cf6",
+  },
+  pomodoroInfoText: {
+    color: "rgba(255, 255, 255, 0.7)",
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  visualizerWrapper: {
+    position: 'absolute',
+    bottom: 40,
+    left: 0,
+    right: 0,
+  },
+  visualControlsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 12,
+  },
+  visualControlButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderRadius: 12,
+    gap: 8,
   },
 });
