@@ -10,20 +10,26 @@ export class NativeAudioEngine implements AudioEngineInterface {
   private isInitialized = false;
   private isStarted = false;
 
-  // Static audio files for different layer types
+  // Local audio asset files for different layer types
+  // NOTE: These require() paths reference assets that need to be added to /assets/audio/
+  // See /assets/audio/README.md for specifications and how to generate these files
   private readonly audioFiles = {
-    noise_white: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
-    noise_pink: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3',
-    noise_brown: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3',
-    pad_low: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3',
-    pad_mid: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3',
-    pad_high: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3',
-    pulse_slow: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-7.mp3',
-    pulse_fast: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3',
-    binaural_alpha: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-9.mp3',
-    binaural_beta: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-10.mp3',
-    binaural_theta: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-11.mp3',
-    binaural_delta: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-12.mp3',
+    // Noise layers
+    noise_white: require('@/assets/audio/noise/white-noise.mp3'),
+    noise_pink: require('@/assets/audio/noise/pink-noise.mp3'),
+    noise_brown: require('@/assets/audio/noise/brown-noise.mp3'),
+
+    // Ambient pad layers (different frequencies)
+    pad_low: require('@/assets/audio/pad/deep-pad-110hz.mp3'),
+    pad_mid: require('@/assets/audio/pad/warm-pad-220hz.mp3'),
+    pad_high: require('@/assets/audio/pad/bright-pad-440hz.mp3'),
+
+    // Pulse/rhythm layers
+    pulse_slow: require('@/assets/audio/pulse/gentle-pulse-60bpm.mp3'),
+    pulse_fast: require('@/assets/audio/pulse/active-pulse-120bpm.mp3'),
+
+    // Binaural beat carrier tones
+    binaural_carrier: require('@/assets/audio/binaural/carrier-200hz.mp3'),
   };
 
   async initialize(): Promise<void> {
@@ -123,14 +129,14 @@ export class NativeAudioEngine implements AudioEngineInterface {
 
   private async createLayer(layer: SoundLayer): Promise<void> {
     try {
-      const audioUrl = this.getAudioUrlForLayer(layer);
-      if (!audioUrl) {
+      const audioSource = this.getAudioSourceForLayer(layer);
+      if (!audioSource) {
         console.warn(`No audio file found for layer: ${layer.id}`);
         return;
       }
 
       const { sound } = await Audio.Sound.createAsync(
-        { uri: audioUrl },
+        audioSource,
         {
           shouldPlay: true,
           isLooping: true,
@@ -145,24 +151,38 @@ export class NativeAudioEngine implements AudioEngineInterface {
     }
   }
 
-  private getAudioUrlForLayer(layer: SoundLayer): string | null {
+  private getAudioSourceForLayer(layer: SoundLayer): any {
     switch (layer.type) {
       case 'noise':
-        return this.audioFiles.noise_pink; // Default to pink noise
+        // Use the specific noise type if provided
+        switch (layer.noiseType) {
+          case 'white':
+            return this.audioFiles.noise_white;
+          case 'brown':
+            return this.audioFiles.noise_brown;
+          case 'pink':
+          default:
+            return this.audioFiles.noise_pink;
+        }
+
       case 'pad':
+        // Select pad based on frequency range
         if (!layer.frequency) return this.audioFiles.pad_mid;
-        if (layer.frequency < 100) return this.audioFiles.pad_low;
-        if (layer.frequency > 200) return this.audioFiles.pad_high;
+        if (layer.frequency < 150) return this.audioFiles.pad_low;
+        if (layer.frequency > 300) return this.audioFiles.pad_high;
         return this.audioFiles.pad_mid;
+
       case 'pulse':
+        // Select pulse speed based on frequency (BPM)
         if (!layer.frequency) return this.audioFiles.pulse_slow;
-        return layer.frequency > 80 ? this.audioFiles.pulse_fast : this.audioFiles.pulse_slow;
+        return layer.frequency > 90 ? this.audioFiles.pulse_fast : this.audioFiles.pulse_slow;
+
       case 'binaural':
-        if (!layer.frequency) return this.audioFiles.binaural_alpha;
-        if (layer.frequency < 8) return this.audioFiles.binaural_delta;
-        if (layer.frequency < 13) return this.audioFiles.binaural_theta;
-        if (layer.frequency < 30) return this.audioFiles.binaural_alpha;
-        return this.audioFiles.binaural_beta;
+        // For binaural, we always use the carrier tone
+        // The actual binaural beat frequency is created by playing in stereo
+        // with slight frequency offset (handled in Web Audio or future enhancement)
+        return this.audioFiles.binaural_carrier;
+
       default:
         return null;
     }

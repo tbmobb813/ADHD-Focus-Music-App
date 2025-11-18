@@ -11,6 +11,7 @@ export interface SoundLayer {
   resonance?: number;
   lfoRate?: number;
   lfoDepth?: number;
+  noiseType?: NoiseType;
 }
 
 export interface Preset {
@@ -52,4 +53,30 @@ export interface GenerativeAudioParams {
   settings: AdaptiveSettings;
   volume: number;
   intensity: number;
+}
+
+export interface SessionHistory {
+  id: string;
+  mode: string;
+  duration: number; // in seconds
+  targetDuration: number; // in seconds
+  completed: boolean;
+  startedAt: number; // timestamp
+  endedAt: number; // timestamp
+  volume: number;
+  intensity: number;
+  noiseType: NoiseType;
+  binauralFreq: number;
+  presetId?: string;
+  presetName?: string;
+}
+
+export interface SessionStats {
+  totalSessions: number;
+  totalMinutes: number;
+  completedSessions: number;
+  averageDuration: number;
+  favoriteMode: string;
+  currentStreak: number;
+  longestStreak: number;
 }

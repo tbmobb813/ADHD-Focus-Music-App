@@ -5,12 +5,14 @@ import createContextHook from "@nkzw/create-context-hook";
 import { SOUNDSCAPES } from "@/constants/soundscapes";
 import { Platform } from "react-native";
 import { useGenerativeAudio } from "@/hooks/useGenerativeAudio";
-import { 
-  NoiseType, 
-  TimeOfDay, 
-  SoundLayer, 
-  Preset, 
-  AdaptiveSettings 
+import {
+  NoiseType,
+  TimeOfDay,
+  SoundLayer,
+  Preset,
+  AdaptiveSettings,
+  SessionHistory,
+  SessionStats
 } from "@/types/audio";
 
 // Get current time of day
@@ -50,9 +52,23 @@ export const [SoundProvider, useSound] = createContextHook(() => {
   const [intensity, setIntensity] = useState(0.5);
   const [presets, setPresets] = useState<Preset[]>([]);
   const [currentPreset, setCurrentPreset] = useState<string | null>(null);
-  
+
+  // Session tracking
+  const [sessionHistory, setSessionHistory] = useState<SessionHistory[]>([]);
+  const [sessionStats, setSessionStats] = useState<SessionStats>({
+    totalSessions: 0,
+    totalMinutes: 0,
+    completedSessions: 0,
+    averageDuration: 0,
+    favoriteMode: 'focus',
+    currentStreak: 0,
+    longestStreak: 0,
+  });
+
   const soundRef = useRef<Audio.Sound | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const currentSessionRef = useRef<SessionHistory | null>(null);
+  const sessionStartTimeRef = useRef<number>(0);
   
   // Use the new generative audio hook
   useGenerativeAudio(
@@ -191,7 +207,7 @@ export const [SoundProvider, useSound] = createContextHook(() => {
       const importedPresets: Preset[] = JSON.parse(presetsJson);
       const newPresets = [...presets, ...importedPresets];
       setPresets(newPresets);
-      
+
       await AsyncStorage.setItem('soundscape_presets', JSON.stringify(newPresets));
       return true;
     } catch (error) {
@@ -199,6 +215,169 @@ export const [SoundProvider, useSound] = createContextHook(() => {
       return false;
     }
   }, [presets]);
+
+  // Session tracking functions
+  const startSession = useCallback(() => {
+    if (!currentMode) return;
+
+    const now = Date.now();
+    sessionStartTimeRef.current = now;
+
+    const preset = currentPreset ? presets.find(p => p.id === currentPreset) : null;
+
+    currentSessionRef.current = {
+      id: now.toString(),
+      mode: currentMode,
+      duration: 0,
+      targetDuration: sessionDuration,
+      completed: false,
+      startedAt: now,
+      endedAt: now,
+      volume,
+      intensity,
+      noiseType,
+      binauralFreq,
+      presetId: preset?.id,
+      presetName: preset?.name,
+    };
+
+    console.log('Session started:', currentSessionRef.current);
+  }, [currentMode, sessionDuration, volume, intensity, noiseType, binauralFreq, currentPreset, presets]);
+
+  const endSession = useCallback(async (completed: boolean) => {
+    if (!currentSessionRef.current) return;
+
+    const now = Date.now();
+    const session: SessionHistory = {
+      ...currentSessionRef.current,
+      duration: elapsedTime,
+      completed,
+      endedAt: now,
+    };
+
+    // Add to session history
+    const updatedHistory = [session, ...sessionHistory].slice(0, 100); // Keep last 100 sessions
+    setSessionHistory(updatedHistory);
+
+    // Save to AsyncStorage
+    try {
+      await AsyncStorage.setItem('session_history', JSON.stringify(updatedHistory));
+      console.log('Session saved:', session);
+    } catch (error) {
+      console.log('Error saving session:', error);
+    }
+
+    // Calculate and update stats
+    calculateSessionStats(updatedHistory);
+
+    // Clear current session
+    currentSessionRef.current = null;
+    sessionStartTimeRef.current = 0;
+  }, [elapsedTime, sessionHistory]);
+
+  const calculateSessionStats = useCallback((history: SessionHistory[]) => {
+    if (history.length === 0) {
+      return;
+    }
+
+    const totalSessions = history.length;
+    const completedSessions = history.filter(s => s.completed).length;
+    const totalMinutes = Math.round(
+      history.reduce((sum, s) => sum + s.duration, 0) / 60
+    );
+    const averageDuration = totalMinutes / totalSessions;
+
+    // Find favorite mode
+    const modeCounts = history.reduce((acc, s) => {
+      acc[s.mode] = (acc[s.mode] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    const favoriteMode = Object.entries(modeCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || 'focus';
+
+    // Calculate streaks (consecutive days with sessions)
+    const sortedHistory = [...history].sort((a, b) => b.startedAt - a.startedAt);
+    let currentStreak = 0;
+    let longestStreak = 0;
+    let tempStreak = 0;
+    let lastDate = '';
+
+    sortedHistory.forEach(session => {
+      const sessionDate = new Date(session.startedAt).toDateString();
+
+      if (lastDate === '') {
+        // First session
+        tempStreak = 1;
+        const today = new Date().toDateString();
+        if (sessionDate === today) {
+          currentStreak = 1;
+        }
+      } else {
+        const lastDateTime = new Date(lastDate).getTime();
+        const sessionDateTime = new Date(sessionDate).getTime();
+        const dayDiff = Math.floor((lastDateTime - sessionDateTime) / (1000 * 60 * 60 * 24));
+
+        if (dayDiff === 1) {
+          // Consecutive day
+          tempStreak++;
+          if (currentStreak > 0) {
+            currentStreak++;
+          }
+        } else if (dayDiff > 1) {
+          // Streak broken
+          longestStreak = Math.max(longestStreak, tempStreak);
+          tempStreak = 1;
+        }
+        // Same day: don't change tempStreak
+      }
+
+      lastDate = sessionDate;
+    });
+
+    longestStreak = Math.max(longestStreak, tempStreak, currentStreak);
+
+    const stats: SessionStats = {
+      totalSessions,
+      totalMinutes,
+      completedSessions,
+      averageDuration,
+      favoriteMode,
+      currentStreak,
+      longestStreak,
+    };
+
+    setSessionStats(stats);
+  }, []);
+
+  const loadSessionHistory = useCallback(async () => {
+    try {
+      const historyData = await AsyncStorage.getItem('session_history');
+      if (historyData) {
+        const history: SessionHistory[] = JSON.parse(historyData);
+        setSessionHistory(history);
+        calculateSessionStats(history);
+      }
+    } catch (error) {
+      console.log('Error loading session history:', error);
+    }
+  }, [calculateSessionStats]);
+
+  const clearSessionHistory = useCallback(async () => {
+    try {
+      await AsyncStorage.removeItem('session_history');
+      setSessionHistory([]);
+      setSessionStats({
+        totalSessions: 0,
+        totalMinutes: 0,
+        completedSessions: 0,
+        averageDuration: 0,
+        favoriteMode: 'focus',
+        currentStreak: 0,
+        longestStreak: 0,
+      });
+    } catch (error) {
+      console.log('Error clearing session history:', error);
+    }
+  }, []);
 
   const loadSettings = useCallback(async () => {
     try {
@@ -227,10 +406,13 @@ export const [SoundProvider, useSound] = createContextHook(() => {
         const loadedPresets = JSON.parse(presetsData);
         setPresets(loadedPresets);
       }
+
+      // Load session history
+      await loadSessionHistory();
     } catch (error) {
       console.log("Error loading settings:", error);
     }
-  }, []);
+  }, [loadSessionHistory]);
 
   const saveSettings = useCallback(async () => {
     try {
@@ -277,12 +459,18 @@ export const [SoundProvider, useSound] = createContextHook(() => {
   }, [currentMode, volume]);
 
   const handleStop = useCallback(async () => {
+    // End session (not completed if stopped manually)
+    if (currentSessionRef.current) {
+      const wasCompleted = elapsedTime >= sessionDuration;
+      await endSession(wasCompleted);
+    }
+
     if (soundRef.current) {
       await soundRef.current.stopAsync();
     }
     setIsPlaying(false);
     setElapsedTime(0);
-  }, []);
+  }, [elapsedTime, sessionDuration, endSession]);
 
   const togglePlayPause = useCallback(async () => {
     if (!currentMode) return;
@@ -293,6 +481,9 @@ export const [SoundProvider, useSound] = createContextHook(() => {
       }
       setIsPlaying(false);
     } else {
+      // Start a new session when play begins
+      startSession();
+
       if (!soundRef.current) {
         await loadSound();
       }
@@ -301,7 +492,7 @@ export const [SoundProvider, useSound] = createContextHook(() => {
       }
       setIsPlaying(true);
     }
-  }, [currentMode, isPlaying, loadSound]);
+  }, [currentMode, isPlaying, loadSound, startSession]);
 
   useEffect(() => {
     loadSettings();
@@ -414,5 +605,9 @@ export const [SoundProvider, useSound] = createContextHook(() => {
     deletePreset,
     exportPresets,
     importPresets,
+    // Session tracking
+    sessionHistory,
+    sessionStats,
+    clearSessionHistory,
   };
 });
